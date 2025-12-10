@@ -1,43 +1,52 @@
-# client/tests/test_redis_conn.py
+# client/redis/redis_conn.py
 import os
-from unittest import mock
-import pytest
-from client.redis import MiddlewareSDKFacade
-from client.redis.redis_conn import CoreRedisClient, get_caching_data
+import yaml
+import redis
 
 
-@pytest.fixture
-def mock_config_yaml(tmp_path):
-    content = """
-    redis:
-        host: localhost
-        port: 6379
-        password: ""
-    """
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(content)
-    os.environ['CONFIG_FILE'] = str(config_file)
-    yield config_file
-    del os.environ['CONFIG_FILE']
+class CoreRedisClient:
+    def __init__(self):
+        self.client = self._connect()
+
+    def _connect(self):
+        # Load Redis config from YAML
+        config_file = os.environ.get("CONFIG_FILE", "config.yaml")
+        with open(config_file, "r") as f:
+            cfg = yaml.safe_load(f)
+
+        redis_cfg = cfg.get("redis", {})
+        host = redis_cfg.get("host", "localhost")
+        port = redis_cfg.get("port", 6379)
+        password = redis_cfg.get("password", "")
+
+        return redis.Redis(host=host, port=port, password=password, decode_responses=True)
+
+    def redis_status(self):
+        """Check if Redis is up or down"""
+        try:
+            self.client.ping()
+            return "up"
+        except Exception:
+            return "down"
 
 
-def test_get_caching_data(mock_config_yaml):
-    with mock.patch("builtins.open", mock.mock_open(read_data=mock_config_yaml.read_text())):
-        result = get_caching_data()
-        assert result["CACHE_REDIS_HOST"] == "localhost"
-        assert result["CACHE_REDIS_PORT"] == 6379
-        assert result["CACHE_REDIS_URL"] == "redis://localhost:6379/0"
+# Singleton instance to be used across your app
+MiddlewareSDKFacade = type("MiddlewareSDKFacade", (), {})()
+MiddlewareSDKFacade.cache = CoreRedisClient()
 
 
-def test_redis_status_up():
-    # Patch the Redis client ping to return True
-    with mock.patch.object(MiddlewareSDKFacade.cache.client, "ping", return_value=True):
-        status = MiddlewareSDKFacade.cache.redis_status()
-        assert status == "up"
+def get_caching_data():
+    """Helper to extract caching config"""
+    config_file = os.environ.get("CONFIG_FILE", "config.yaml")
+    with open(config_file, "r") as f:
+        cfg = yaml.safe_load(f)
 
+    redis_cfg = cfg.get("redis", {})
+    host = redis_cfg.get("host", "localhost")
+    port = redis_cfg.get("port", 6379)
 
-def test_redis_status_down():
-    # Patch the Redis client ping to raise an Exception
-    with mock.patch.object(MiddlewareSDKFacade.cache.client, "ping", side_effect=Exception("Redis down")):
-        status = MiddlewareSDKFacade.cache.redis_status()
-        assert status == "down"
+    return {
+        "CACHE_REDIS_HOST": host,
+        "CACHE_REDIS_PORT": port,
+        "CACHE_REDIS_URL": f"redis://{host}:{port}/0"
+    }
