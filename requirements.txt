@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 flask
+Flask-Caching
 psycopg2-binary
 redis
 peewee
@@ -10,6 +11,7 @@ python-json-logger
 requests
 loguru
 sqlalchemy
+voluptuous
 pytest
 pytest-cov
 pytest-mock
