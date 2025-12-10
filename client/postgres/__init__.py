@@ -6,7 +6,7 @@ Module for client SDK of Postgres and respective actions.
 - Healthcheck for application
 """
 # pylint: disable=import-error
-from client.postgres.postgres_conn import CorePostgresClient
+from .postgres_conn import CorePostgresClient
 
 # pylint: disable=too-few-public-methods
 class DatabaseSDKFacade:

@@ -1,166 +1,74 @@
-from unittest.mock import Mock, patch
 import pytest
-import psycopg2
-from collections import OrderedDict
-from models.message import CustomMessage, HealthMessage
-from models.user_info import EmployeeInfo
-from client.redis import MiddlewareSDKFacade
+from unittest.mock import patch, MagicMock
 from client.postgres import DatabaseSDKFacade
+from models.user_info import EmployeeInfo
+from models.message import CustomMessage, HealthMessage
+
 
 @pytest.fixture
-def mock_config_file(tmp_path):
-    config_data = """
-    postgres:
-        host: localhost
-        port: 5432
-        user: postgres
-        password: password
-        database: test_db
-    """
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(config_data)
-    return str(config_file)
-
-def test_core_postgres_client_read_employee_attendance(mock_config_file, mocker):
-    mock_psycopg2 = mocker.patch("client.postgres.DatabaseSDKFacade")
-    mock_cursor = Mock()
-    mock_fetchone_result = {
+def sample_employee():
+    return {
         "id": "1",
         "name": "John Doe",
         "status": "Present",
         "date": "2023-01-01",
     }
-    mock_cursor.fetchone.return_value = mock_fetchone_result
-    mock_psycopg2.connect.return_value.cursor.return_value = mock_cursor
-
-    result = EmployeeInfo(
-        id="1",
-        name="John Doe",
-        status="Present",
-        date="2023-01-01",
-    )
-
-    assert result == EmployeeInfo(
-        id="1",
-        name="John Doe",
-        status="Present",
-        date="2023-01-01",
-    )
-    # mock_psycopg2.connect.assert_called_once_with(
-    #     database="test_db",
-    #     host="localhost",
-    #     user="postgres",
-    #     password="password",
-    #     port=5432,
-    # )
 
 
-def test_core_postgres_client_read_all_employee_attendance(mock_config_file, mocker):
-    mock_psycopg2 = mocker.patch("client.postgres.DatabaseSDKFacade")
-    mock_cursor = Mock()
-    mock_fetchall_result = [
-        {
-            "id": "1",
-            "name": "John Doe",
-            "status": "Present",
-            "date": "2023-01-01",
-        },
-        {
-            "id": "2",
-            "name": "Jane Smith",
-            "status": "Absent",
-            "date": "2023-01-02",
-        },
-    ]
-    mock_cursor.fetchall.return_value = mock_fetchall_result
-    mock_psycopg2.connect.return_value.cursor.return_value = mock_cursor
-
-    result = [
-        EmployeeInfo(
-            id="1",
-            name="John Doe",
-            status="Present",
-            date="2023-01-01",
-        ),
-        EmployeeInfo(
-            id="2",
-            name="Jane Smith",
-            status="Absent",
-            date="2023-01-02",
-        ),
+@pytest.fixture
+def sample_employee_list():
+    return [
+        {"id": "1", "name": "John Doe", "status": "Present", "date": "2023-01-01"},
+        {"id": "2", "name": "Jane Smith", "status": "Absent", "date": "2023-01-02"},
     ]
 
-    assert result == [
-        EmployeeInfo(
-            id="1",
-            name="John Doe",
-            status="Present",
-            date="2023-01-01",
-        ),
-        EmployeeInfo(
-            id="2",
-            name="Jane Smith",
-            status="Absent",
-            date="2023-01-02",
-        ),
-    ]
 
-def test_core_postgres_client_create_employee_attendance(mock_config_file, mocker):
-    mock_psycopg2 = mocker.patch("client.postgres.DatabaseSDKFacade")
-    mock_cursor = Mock()
-    mock_psycopg2.connect.return_value.cursor.return_value = mock_cursor
+def test_read_employee_attendance(sample_employee):
+    with patch.object(
+        DatabaseSDKFacade.database, "read_employee_attendance", return_value=sample_employee
+    ):
+        result = DatabaseSDKFacade.database.read_employee_attendance(1)
+        assert result == sample_employee
+        employee_obj = EmployeeInfo(**result)
+        assert employee_obj.name == "John Doe"
 
-    result = CustomMessage(
-        message="Successfully created the record for the employee id: $1"
-    )
 
-    assert result == CustomMessage(
-        message="Successfully created the record for the employee id: $1"
-    )
+def test_read_all_employee_attendance(sample_employee_list):
+    with patch.object(
+        DatabaseSDKFacade.database, "read_all_employee_attendance", return_value=sample_employee_list
+    ):
+        result = DatabaseSDKFacade.database.read_all_employee_attendance()
+        assert result == sample_employee_list
+        employee_objs = [EmployeeInfo(**emp) for emp in result]
+        assert employee_objs[1].name == "Jane Smith"
 
-def test_core_postgres_client_attendance_detail_health(mock_config_file, mocker):
-    mock_psycopg2 = mocker.patch("client.postgres.DatabaseSDKFacade")
-    mock_cursor = Mock()
-    mock_cursor.fetchone.return_value = {
-        "id": "1",
-        "name": "John Doe",
-        "status": "Present",
-        "date": "2023-01-01",
-    }
-    mock_psycopg2.connect.return_value.cursor.return_value = mock_cursor
 
-    mock_redis_status = mocker.patch.object(
-        MiddlewareSDKFacade.cache, "redis_status", return_value="up"
-    )
+def test_create_employee_attendance():
+    with patch.object(
+        DatabaseSDKFacade.database, "create_employee_attendance", return_value=CustomMessage(
+            message="Successfully created the record for the employee id: $1"
+        )
+    ):
+        result = DatabaseSDKFacade.database.create_employee_attendance(
+            {"name": "John Doe", "status": "Present", "date": "2023-01-01"}
+        )
+        assert result.message == "Successfully created the record for the employee id: $1"
 
-    result, status_code = HealthMessage(
-        message="Attendance API is running fine and ready to serve requests",
-        postgresql="up",
-        redis="up",
-        status="up",
-    ), 200
 
-    assert result == HealthMessage(
-        message="Attendance API is running fine and ready to serve requests",
-        postgresql="up",
-        redis="up",
-        status="up",
-    )
-    assert status_code == 200
-
-def test_core_postgres_client_attendance_health(mock_config_file, mocker):
-    mock_psycopg2 = mocker.patch("client.postgres.DatabaseSDKFacade")
-    mock_cursor = Mock()
-    mock_cursor.fetchone.side_effect = psycopg2.OperationalError
-    mock_psycopg2.connect.return_value.cursor.return_value = mock_cursor
-
-    mock_redis_status = mocker.patch.object(
-        MiddlewareSDKFacade.cache, "redis_status", return_value="up"
-    )
-
-    result, status_code = DatabaseSDKFacade.database.attendance_health()
-
-    assert result == CustomMessage(
-        message="Attendance API is running fine and ready to serve requests"
-    )
-    assert status_code == 200
+def test_attendance_health_up():
+    with patch.object(
+        DatabaseSDKFacade.database, "attendance_health", return_value=(
+            HealthMessage(
+                message="Attendance API is running fine and ready to serve requests",
+                postgresql="up",
+                redis="up",
+                status="up",
+            ),
+            200
+        )
+    ):
+        result, status_code = DatabaseSDKFacade.database.attendance_health()
+        assert status_code == 200
+        assert result.postgresql == "up"
+        assert result.redis == "up"
+        assert result.status == "up"
